@@ -26,7 +26,7 @@ CROSS_COMPILE_TA ?= $(CROSS_COMPILE)
 
 .PHONY: all
 ifneq ($(wildcard $(TA_DEV_KIT_DIR)/host_include/conf.mk),)
-all: xtest ta
+all: xtest ta hello_world attestation_storage
 else
 all:
 	$(q)echo "TA_DEV_KIT_DIR is not correctly defined" && false
@@ -35,6 +35,20 @@ endif
 .PHONY: xtest
 xtest:
 	$(q)$(MAKE) -C host/xtest CROSS_COMPILE="$(CROSS_COMPILE_HOST)" \
+			     --no-builtin-variables \
+			     O=$(out-dir) \
+			     $@
+
+.PHONY: hello_world
+hello_world:
+	$(q)$(MAKE) -C host/hello_world CROSS_COMPILE="$(CROSS_COMPILE_HOST)" \
+			     --no-builtin-variables \
+			     O=$(out-dir) \
+			     $@
+
+.PHONY: attestation_storage
+attestation_storage:
+	$(q)$(MAKE) -C host/attestation_storage CROSS_COMPILE="$(CROSS_COMPILE_HOST)" \
 			     --no-builtin-variables \
 			     O=$(out-dir) \
 			     $@
@@ -49,6 +63,8 @@ ta:
 ifneq ($(wildcard $(TA_DEV_KIT_DIR)/host_include/conf.mk),)
 clean:
 	$(q)$(MAKE) -C host/xtest O=$(out-dir) $@
+	$(q)$(MAKE) -C host/hello_world O=$(out-dir) $@
+	$(q)$(MAKE) -C host/attestation_storage O=$(out-dir) $@
 	$(q)$(MAKE) -C ta O=$(out-dir) $@
 else
 clean:
@@ -217,3 +233,6 @@ install:
 	$(echo) '  INSTALL ${DESTDIR}/bin'
 	$(q)mkdir -p ${DESTDIR}/bin
 	$(q)cp -a $(out-dir)/xtest/xtest ${DESTDIR}/bin
+	$(q)cp -a $(out-dir)/xtest/hello_world ${DESTDIR}/bin
+	$(q)cp -a $(out-dir)/hello_world/hello_world ${DESTDIR}/bin
+	$(q)cp -a $(out-dir)/attestation_storage/attestation_storage ${DESTDIR}/bin
