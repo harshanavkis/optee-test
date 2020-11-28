@@ -43,12 +43,15 @@
 #include "crypto_common.h"
 #include "attestation.h"
 
-/*
- * TEE client stuff
- */
+#define MAX_SHM_SIZE 1048576
 
 double tee_time = 0;
 double total_time = 0;
+
+typedef struct
+{
+	char data[32];
+} sha_out_blk;
 
 static TEEC_Context ctx;
 static TEEC_Session sess;
@@ -169,9 +172,6 @@ void sha_attest(int algo, char* data,
 {
 	TEEC_Operation op;
 
-	open_ta();
-	prepare_op(algo);
-
 	alloc_shm(size, algo, offset);
 
 	memset(&op, 0, sizeof(op));
@@ -196,7 +196,7 @@ void sha_attest(int algo, char* data,
 
   	gettimeofday(&tv2, NULL);
 
-  	tee_time = ((double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec));
+  	tee_time += ((double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec));
 }
 
 int main(int argc, char* argv[])
@@ -207,38 +207,72 @@ int main(int argc, char* argv[])
 		exit(1);
 	}
 	FILE *f = fopen(argv[1], "rb");
+	while(f == NULL)
+	{
+		f = fopen(argv[1], "rb");	
+	}
+
 	int offset = 0;
+	char *kern_img = (char*) calloc(1, MAX_SHM_SIZE);
+	size_t bytes_read;
 
 	fseek(f, 0, SEEK_END);
 	long fsize = ftell(f);
 	fseek(f, 0, SEEK_SET);
 
-	char *kern_img = malloc(fsize);
-	fread(kern_img, 1, fsize, f);
-	fclose(f);
+	int num_blocks = ((int) fsize/MAX_SHM_SIZE) + 1;
+	sha_out_blk* sha_blks = (sha_out_blk*) calloc(num_blocks, sizeof(sha_out_blk));
+	int i = 0;
+	char hash_buf[32];
 
+	open_ta();
+	prepare_op(TA_SHA_SHA256);
+	
 	/* real stuff happens below this */
-
 	struct timeval tv1, tv2;
   	gettimeofday(&tv1, NULL);
 
-	sha_attest(TA_SHA_SHA256, kern_img, fsize, offset);
+	while((bytes_read = fread(kern_img, 1, MAX_SHM_SIZE, f)) > 0)
+	{
+		sha_attest(TA_SHA_SHA256, kern_img, MAX_SHM_SIZE, offset);
+		memcpy(hash_buf, out_shm.buffer, 32);
+		// hash_buf = (char*) out_shm.buffer;
+		memcpy(sha_blks+i, hash_buf, sizeof(sha_out_blk));
+		i++;
+		free_shm();
+	}
 
-  	gettimeofday(&tv2, NULL);
+	if(num_blocks != 1)
+	{
+		sha_out_blk sha_append_data[2];
+		memcpy(sha_append_data, sha_blks, 32);
+		memcpy(sha_append_data+1, sha_blks+1, 32);
+
+		sha_attest(TA_SHA_SHA256, (char*)sha_append_data, 64, offset);
+		memcpy(hash_buf, out_shm.buffer, 32);
+		free_shm();
+
+		for(i=2; i<num_blocks; i++)
+		{
+			memcpy(sha_append_data, hash_buf, 32);
+			memcpy(sha_append_data+1, sha_blks+i, 32);
+			sha_attest(TA_SHA_SHA256, (char*)sha_append_data, 64, offset);
+			memcpy(hash_buf, out_shm.buffer, 32);
+			free_shm();
+		}
+	}
+
+	gettimeofday(&tv2, NULL);
 
   	total_time = ((double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec));
 
-  	char *hash_buf = (char*) out_shm.buffer;
-
-  	for(int i=0; i<32; i++)
+  	for(i=0; i<32; i++)
   	{
   		printf("%02X", hash_buf[i]);
   	}
-  	printf("\n");
+  	printf("\n");  	
 
-  	free_shm();
-
-	// free(kern_img);
+	free(kern_img);
 	printf("%f\n", total_time);
 
 	return 0;
