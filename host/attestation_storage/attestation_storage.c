@@ -270,10 +270,10 @@ int main(int argc, char* argv[])
   	{
   		printf("%02X", hash_buf[i]);
   	}
-  	printf("\n");  	
+  	//printf("\n");  	
 
 	free(kern_img);
-	printf("%f\n", total_time);
+	fprintf(stderr, "%f,%f\n", total_time, tee_time);
 
 	return 0;
 }
